@@ -3,6 +3,7 @@
 #include "../states/MenuState.h"
 #include "../models/Player.h"
 #include "../ui/Theme.h"
+#include "../audio/AudioManager.h"
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_opengl.h>
@@ -51,6 +52,8 @@ bool Application::initSDL(const std::string& title)
     glContext = SDL_GL_CreateContext(window);
     SDL_GL_MakeCurrent(window, glContext);
     SDL_GL_SetSwapInterval(1); // vsync
+
+    AudioManager::instance().init(); // init audio after SDL window
     return true;
 }
 
@@ -132,6 +135,7 @@ void Application::setPlayer(std::unique_ptr<Player> p)
 
 void Application::shutdown()
 {
+    AudioManager::instance().shutdown();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();

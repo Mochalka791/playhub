@@ -2,6 +2,7 @@
 #include "../core/IState.h"
 #include "../games/Roulette.h"
 #include "../ui/AnimationSystem.h"
+#include "../ui/ParticleSystem.h"
 #include <memory>
 #include <string>
 
@@ -27,6 +28,10 @@ private:
     float spinStartAngle = 0.0f;
     float totalSpinAmt   = 0.0f;
     int   finalNumber    = -1;
+
+    ParticleSystem particles;
+    bool  spinSoundPlayed = false;
+    bool  resultSoundPlayed = false;
 
     void renderWheel(float screenX, float screenY, float radius);
     void renderBettingPanel(float panelX, float panelY);

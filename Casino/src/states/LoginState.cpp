@@ -5,6 +5,7 @@
 #include "../core/Application.h"
 #include "../models/Player.h"
 #include "../ui/Theme.h"
+#include "../audio/AudioManager.h"
 #include <imgui.h>
 #include <cstring>
 
@@ -66,6 +67,7 @@ void LoginState::render()
         } else if (startBalance < 100.0f) {
             errorMsg = "Minimum balance is $100.";
         } else {
+            AudioManager::instance().play(Sound::ButtonClick, 80);
             app.setPlayer(std::make_unique<Player>(nameBuf.data(), startBalance));
             sm.changeState(std::make_unique<LobbyState>(sm, app));
         }
@@ -74,6 +76,7 @@ void LoginState::render()
 
     ImGui::SetCursorPos({cx + 10.0f, cy + 85.0f});
     if (ImGui::Button("  Back  ", btnSize)) {
+        AudioManager::instance().play(Sound::ButtonClick, 60);
         sm.changeState(std::make_unique<MenuState>(sm, app));
     }
 

@@ -1,6 +1,7 @@
 #pragma once
 #include "../core/IState.h"
 #include "../games/Blackjack.h"
+#include "../ui/ParticleSystem.h"
 #include <memory>
 #include <string>
 
@@ -21,6 +22,9 @@ private:
     // Dealer-turn auto-play timer
     float dealerTimer = 0.0f;
     static constexpr float DEALER_STEP_DELAY = 0.8f;
+
+    ParticleSystem particles;
+    bool resultResolved = false;
 
     void renderHand(const Hand& hand, bool hideFirst, const char* label);
     void resolveAndShowResult();

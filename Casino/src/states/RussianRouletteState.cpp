@@ -4,6 +4,7 @@
 #include "../core/Application.h"
 #include "../models/Player.h"
 #include "../ui/Theme.h"
+#include "../audio/AudioManager.h"
 #include <imgui.h>
 #include <cmath>
 #include <string>
@@ -23,10 +24,15 @@ void RussianRouletteState::onEnter()
     shakeTimer   = 0.0f;
     cylinderAngle = 0.0f;
     resultMsg.clear();
+    resultSoundPlayed = false;
+    particles.clear();
+    AudioManager::instance().play(Sound::GunCock, 100);
 }
 
 void RussianRouletteState::update(float dt)
 {
+    particles.update(dt);
+
     if (phase == RRPhase::Pulling) {
         cylinderAngle += dt * 18.0f; // fast spin
         pullTimer += dt;
@@ -38,6 +44,24 @@ void RussianRouletteState::update(float dt)
                 resultMsg = "BANG!  You were shot.  -$" + std::to_string((int)game->getBet());
             else
                 resultMsg = "Click...  Safe!   +" + std::to_string((int)(game->getPayout() - game->getBet())) + "$";
+        }
+    }
+
+    if (phase == RRPhase::Result && !resultSoundPlayed) {
+        resultSoundPlayed = true;
+        ImGuiIO& io = ImGui::GetIO();
+        float cx = io.DisplaySize.x * 0.5f;
+        float cy = io.DisplaySize.y * 0.5f;
+
+        if (game->wasShot()) {
+            AudioManager::instance().play(Sound::GunBang, 128);
+            particles.emit(cx - 100.0f, cy - 60.0f, 30, ParticleType::Flash);
+            particles.emit(cx - 100.0f, cy - 60.0f, 20, ParticleType::Smoke);
+        } else {
+            AudioManager::instance().play(Sound::GunClickEmpty, 100);
+            AudioManager::instance().play(Sound::WinFanfare, 100);
+            particles.emit(cx, cy, 50, ParticleType::Coin);
+            particles.emit(cx, cy, 20, ParticleType::Star);
         }
     }
 
@@ -71,6 +95,8 @@ void RussianRouletteState::render()
         ImGuiWindowFlags_NoScrollbar  | ImGuiWindowFlags_NoSavedSettings);
 
     if (shot) ImGui::PopStyleColor();
+
+    particles.render(ImGui::GetWindowDrawList(), ImGui::GetWindowPos());
 
     float cx = io.DisplaySize.x * 0.5f;
     float cy = io.DisplaySize.y * 0.5f;
@@ -185,7 +211,7 @@ void RussianRouletteState::renderSetup(float cx, float cy)
     }
 
     // Risk + multiplier info
-    float mult = game->getMultiplier();
+    float mult = (float)game->getMultiplier();
     float surviveChance = (6 - bullets) / 6.0f * 100.0f;
 
     ImGui::SetCursorPos({panelX, panelY + 65.0f});
@@ -280,6 +306,9 @@ void RussianRouletteState::renderResult(float cx, float cy)
         pullTimer = 0.0f;
         shakeTimer = 0.0f;
         cylinderAngle = 0.0f;
+        resultSoundPlayed = false;
+        particles.clear();
+        AudioManager::instance().play(Sound::GunCock, 100);
     }
     Theme::PopButtonGold();
 

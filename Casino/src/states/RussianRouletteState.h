@@ -1,6 +1,7 @@
 #pragma once
 #include "../core/IState.h"
 #include "../games/RussianRoulette.h"
+#include "../ui/ParticleSystem.h"
 #include <memory>
 #include <string>
 
@@ -23,6 +24,9 @@ private:
     float shakeTimer     = 0.0f;
     float cylinderAngle  = 0.0f;   // animation spin
     std::string resultMsg;
+
+    ParticleSystem particles;
+    bool resultSoundPlayed = false;
 
     void renderCylinder(float screenX, float screenY);
     void renderSetup(float cx, float cy);

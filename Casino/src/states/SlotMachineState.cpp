@@ -4,6 +4,7 @@
 #include "../core/Application.h"
 #include "../models/Player.h"
 #include "../ui/Theme.h"
+#include "../audio/AudioManager.h"
 #include <imgui.h>
 #include <random>
 #include <string>
@@ -19,27 +20,62 @@ void SlotMachineState::onEnter()
     showResult = false;
     reelAnim   = {};
     displayReels.fill(SlotSymbol::Seven);
+    reel1WasDone = reel2WasDone = reel3WasDone = false;
+    particles.clear();
+    winFlashTimer = 0.0f;
 }
 
 void SlotMachineState::update(float dt)
 {
+    particles.update(dt);
+    if (winFlashTimer > 0.0f) winFlashTimer -= dt;
+
     if (reelAnim.active) {
         reelAnim.update(dt);
         updateDisplayReels();
 
+        // Play tick sound on every other frame while spinning
+        if (reelAnim.frameCounter % 3 == 0)
+            AudioManager::instance().play(Sound::ReelTick, 55);
+
+        // Play stop sound as each reel locks
+        if (reelAnim.reel1Done() && !reel1WasDone) {
+            reel1WasDone = true;
+            AudioManager::instance().play(Sound::ReelStop, 90);
+        }
+        if (reelAnim.reel2Done() && !reel2WasDone) {
+            reel2WasDone = true;
+            AudioManager::instance().play(Sound::ReelStop, 90);
+        }
+        if (reelAnim.reel3Done() && !reel3WasDone) {
+            reel3WasDone = true;
+            AudioManager::instance().play(Sound::ReelStop, 90);
+        }
+
         if (reelAnim.finished() && !showResult) {
-            // Lock in the final reel results
             displayReels = game->getReels();
             showResult   = true;
 
-            double payout = game->getPayout();
+            double payout  = game->getPayout();
             GameResult res = game->getResult();
-            if (res == GameResult::Win)
+            if (res == GameResult::Win) {
                 resultMsg = "YOU WIN!  Payout: $" + std::to_string((int)payout);
-            else if (res == GameResult::Push)
+                bool isBig = (game->getReels()[0] == SlotSymbol::Crown);
+                AudioManager::instance().play(
+                    isBig ? Sound::BigWinFanfare : Sound::WinFanfare, 115);
+                // Particles burst from reel area
+                particles.emit(512.f, 200.f, isBig ? 80 : 40,
+                               isBig ? ParticleType::Confetti : ParticleType::Coin);
+                if (isBig)
+                    particles.emit(512.f, 200.f, 40, ParticleType::Star);
+                winFlashTimer = 0.4f;
+            } else if (res == GameResult::Push) {
                 resultMsg = "Two matching! Bet returned.";
-            else
+                AudioManager::instance().play(Sound::CoinDrop, 80);
+            } else {
                 resultMsg = "No match. Better luck next time!";
+                AudioManager::instance().play(Sound::Lose, 90);
+            }
         }
     }
 }
@@ -76,6 +112,8 @@ void SlotMachineState::render()
     ImGui::Begin("##slots", nullptr,
         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoScrollbar  | ImGuiWindowFlags_NoSavedSettings);
+
+    particles.render(ImGui::GetWindowDrawList(), ImGui::GetWindowPos());
 
     float cx  = io.DisplaySize.x * 0.5f;
     float top = 30.0f;

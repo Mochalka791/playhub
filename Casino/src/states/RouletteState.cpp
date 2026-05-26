@@ -4,6 +4,7 @@
 #include "../core/Application.h"
 #include "../models/Player.h"
 #include "../ui/Theme.h"
+#include "../audio/AudioManager.h"
 #include <imgui.h>
 #include <cmath>
 #include <string>
@@ -31,6 +32,9 @@ void RouletteState::onEnter()
     spinAnim    = {};
     wheelAngle  = 0.0f;
     finalNumber = -1;
+    spinSoundPlayed   = false;
+    resultSoundPlayed = false;
+    particles.clear();
 }
 
 int RouletteState::findWheelIndex(int number) const
@@ -42,7 +46,15 @@ int RouletteState::findWheelIndex(int number) const
 
 void RouletteState::update(float dt)
 {
+    particles.update(dt);
+
     if (spinAnim.active) {
+        if (!spinSoundPlayed) {
+            spinSoundPlayed = true;
+            AudioManager::instance().play(Sound::WheelSpin, 90);
+            AudioManager::instance().play(Sound::BallRoll, 80);
+        }
+
         spinAnim.update(dt);
         float t = spinAnim.progress();
 
@@ -53,6 +65,21 @@ void RouletteState::update(float dt)
         if (spinAnim.finished()) {
             wheelAngle  = spinStartAngle + totalSpinAmt;
             showResult  = true;
+        }
+    }
+
+    if (showResult && !resultSoundPlayed) {
+        resultSoundPlayed = true;
+        ImGuiIO& io = ImGui::GetIO();
+        float cx = io.DisplaySize.x * 0.5f;
+        float cy = io.DisplaySize.y * 0.5f;
+        bool won = (game->getResult() == GameResult::Win);
+        if (won) {
+            AudioManager::instance().play(Sound::WinFanfare, 115);
+            particles.emit(cx, cy, 60, ParticleType::Coin);
+            particles.emit(cx, cy, 40, ParticleType::Confetti);
+        } else {
+            AudioManager::instance().play(Sound::Lose, 90);
         }
     }
 }
@@ -242,10 +269,12 @@ void RouletteState::renderBettingPanel(float panelX, float panelY)
         // Ensure target > current + 6 full rotations
         float rotations = 6.0f * 2.0f * PI_F;
         float target = base + ceilf((wheelAngle + rotations - base) / (2.0f * PI_F)) * 2.0f * PI_F;
-        spinStartAngle = wheelAngle;
-        totalSpinAmt   = target - wheelAngle;
+        spinStartAngle    = wheelAngle;
+        totalSpinAmt      = target - wheelAngle;
         spinAnim.duration = 4.0f;
         spinAnim.start();
+        spinSoundPlayed   = false;
+        resultSoundPlayed = false;
     }
     if (!canSpin) ImGui::EndDisabled();
     Theme::PopButtonGold();
@@ -266,6 +295,8 @@ void RouletteState::render()
     ImGui::Begin("##roulette", nullptr,
         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoScrollbar  | ImGuiWindowFlags_NoSavedSettings);
+
+    particles.render(ImGui::GetWindowDrawList(), ImGui::GetWindowPos());
 
     float cx  = io.DisplaySize.x * 0.5f;
     float top = 30.0f;
@@ -324,9 +355,13 @@ void RouletteState::render()
         if (ImGui::Button("  Play Again  ", btnSz)) {
             game = std::make_unique<Roulette>(*app.getPlayer());
             resultMsg.clear();
-            showResult  = false;
-            spinAnim    = {};
-            finalNumber = -1;
+            showResult        = false;
+            spinAnim          = {};
+            finalNumber       = -1;
+            spinSoundPlayed   = false;
+            resultSoundPlayed = false;
+            particles.clear();
+            AudioManager::instance().play(Sound::ButtonClick, 60);
         }
         Theme::PopButtonGold();
     }

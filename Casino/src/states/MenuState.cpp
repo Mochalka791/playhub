@@ -3,6 +3,7 @@
 #include "../core/StateManager.h"
 #include "../core/Application.h"
 #include "../ui/Theme.h"
+#include "../audio/AudioManager.h"
 #include <imgui.h>
 
 MenuState::MenuState(StateManager& sm, Application& app)
@@ -51,6 +52,7 @@ void MenuState::render()
 
     ImGui::SetCursorPos({cx - 100.0f, cy + 30.0f});
     if (ImGui::Button("  PLAY  ", btnSize)) {
+        AudioManager::instance().play(Sound::ButtonClick, 80);
         sm.changeState(std::make_unique<LoginState>(sm, app));
     }
 
@@ -59,6 +61,7 @@ void MenuState::render()
 
     ImGui::SetCursorPos({cx - 100.0f, cy + 95.0f});
     if (ImGui::Button("  EXIT  ", btnSize)) {
+        AudioManager::instance().play(Sound::ButtonClick, 60);
         app.stop();
     }
 

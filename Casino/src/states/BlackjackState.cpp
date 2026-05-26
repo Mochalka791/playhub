@@ -5,6 +5,7 @@
 #include "../models/Player.h"
 #include "../games/DealerHitSoft17.h"
 #include "../ui/Theme.h"
+#include "../audio/AudioManager.h"
 #include <imgui.h>
 #include <string>
 
@@ -19,10 +20,14 @@ void BlackjackState::onEnter()
     betAmount  = 10.0f;
     resultMsg.clear();
     dealerTimer = 0.0f;
+    resultResolved = false;
+    particles.clear();
 }
 
 void BlackjackState::update(float dt)
 {
+    particles.update(dt);
+
     // Dealer-turn auto-play with timed delay between hits
     if (game->getPhase() == BlackjackPhase::DealerTurn) {
         dealerTimer += dt;
@@ -33,7 +38,8 @@ void BlackjackState::update(float dt)
         }
     }
 
-    if (game->getPhase() == BlackjackPhase::GameOver && resultMsg.empty()) {
+    if (game->getPhase() == BlackjackPhase::GameOver && !resultResolved) {
+        resultResolved = true;
         resolveAndShowResult();
     }
 }
@@ -42,18 +48,31 @@ void BlackjackState::resolveAndShowResult()
 {
     GameResult r = game->getResult();
     double     p = game->getPayout();
+    ImGuiIO& io  = ImGui::GetIO();
+    float cx = io.DisplaySize.x * 0.5f;
+    float cy = io.DisplaySize.y * 0.5f;
+
     switch (r) {
     case GameResult::Blackjack:
         resultMsg = "BLACKJACK!  Payout: $" + std::to_string((int)p);
+        AudioManager::instance().play(Sound::BigWinFanfare, 115);
+        particles.emit(cx, cy - 50.0f, 80, ParticleType::Confetti);
+        particles.emit(cx, cy - 50.0f, 40, ParticleType::Star);
+        particles.emit(cx, cy - 50.0f, 30, ParticleType::Coin);
         break;
     case GameResult::Win:
         resultMsg = "YOU WIN!  Payout: $" + std::to_string((int)p);
+        AudioManager::instance().play(Sound::WinFanfare, 115);
+        particles.emit(cx, cy - 50.0f, 50, ParticleType::Coin);
+        particles.emit(cx, cy - 50.0f, 20, ParticleType::Confetti);
         break;
     case GameResult::Push:
         resultMsg = "PUSH – Bet returned: $" + std::to_string((int)p);
+        AudioManager::instance().play(Sound::CoinDrop, 80);
         break;
     case GameResult::Loss:
         resultMsg = "Dealer wins. You lost $" + std::to_string((int)game->getBet());
+        AudioManager::instance().play(Sound::Lose, 90);
         break;
     }
 }
@@ -85,6 +104,8 @@ void BlackjackState::render()
     ImGui::Begin("##bj", nullptr,
         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoScrollbar  | ImGuiWindowFlags_NoSavedSettings);
+
+    particles.render(ImGui::GetWindowDrawList(), ImGui::GetWindowPos());
 
     float cx  = io.DisplaySize.x * 0.5f;
     float top = 30.0f;
@@ -145,6 +166,8 @@ void BlackjackState::render()
             game->placeBet(betAmount);
             game->play();
             resultMsg.clear();
+            resultResolved = false;
+            AudioManager::instance().play(Sound::CardFlip, 80);
         }
         if (!canDeal) ImGui::EndDisabled();
         Theme::PopButtonGold();
@@ -160,18 +183,24 @@ void BlackjackState::render()
 
         Theme::PushButtonGold();
         ImGui::SetCursorPos({cx - 220.0f, top + 230.0f});
-        if (ImGui::Button("  HIT  ", btnSize))
+        if (ImGui::Button("  HIT  ", btnSize)) {
             game->hit();
+            AudioManager::instance().play(Sound::CardFlip, 70);
+        }
 
         ImGui::SetCursorPos({cx - 70.0f, top + 230.0f});
-        if (ImGui::Button("  STAND  ", btnSize))
+        if (ImGui::Button("  STAND  ", btnSize)) {
             game->stand();
+            AudioManager::instance().play(Sound::ButtonClick, 70);
+        }
         Theme::PopButtonGold();
 
         if (game->canDoubleDown()) {
             ImGui::SetCursorPos({cx + 80.0f, top + 230.0f});
-            if (ImGui::Button("  DOUBLE DOWN  ", {170.0f, 40.0f}))
+            if (ImGui::Button("  DOUBLE DOWN  ", {170.0f, 40.0f})) {
                 game->doubleDown();
+                AudioManager::instance().play(Sound::CardFlip, 80);
+            }
         }
 
         // Player bust immediate feedback
@@ -211,6 +240,9 @@ void BlackjackState::render()
                 std::make_unique<DealerHitSoft17>());
             resultMsg.clear();
             dealerTimer = 0.0f;
+            resultResolved = false;
+            particles.clear();
+            AudioManager::instance().play(Sound::ButtonClick, 60);
         }
         Theme::PopButtonGold();
 
