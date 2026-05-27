@@ -5,7 +5,7 @@
 
 class Player;
 
-enum class BetType { Red, Black, Even, Odd, Dozen1, Dozen2, Dozen3, Straight };
+enum class BetType { Red, Black, Even, Odd, Dozen1, Dozen2, Dozen3, Straight, Low, High };
 
 struct RouletteBet
 {

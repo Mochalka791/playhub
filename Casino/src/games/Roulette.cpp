@@ -94,6 +94,10 @@ double Roulette::calcBetPayout(const RouletteBet& b, int number) const
         return (number >= 25 && number <= 36) ? b.amount * 3.0 : 0.0;
     case BetType::Straight:
         return (number == b.straightNumber) ? b.amount * 36.0 : 0.0;
+    case BetType::Low:
+        return (number >= 1 && number <= 18) ? b.amount * 2.0 : 0.0;
+    case BetType::High:
+        return (number >= 19 && number <= 36) ? b.amount * 2.0 : 0.0;
     }
     return 0.0;
 }
