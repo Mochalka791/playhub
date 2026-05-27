@@ -21,6 +21,12 @@ void Blackjack::play()
 
     playerHand.clear();
     dealerHand.clear();
+    splitHand.clear();
+    splitActive  = false;
+    splitPayout  = 0.0;
+    splitResult  = GameResult::Loss;
+    insuranceBet = 0.0;
+    insuranceWin = false;
     phase = BlackjackPhase::PlayerTurn;
 
     // Deal: player, dealer, player, dealer
@@ -31,6 +37,12 @@ void Blackjack::play()
 
     EventBus::instance().publish(GameStartEvent{player.getName(), getName()});
 
+    // Insurance offer: dealer shows Ace
+    if (dealerHand[0].rank == Rank::Ace) {
+        phase = BlackjackPhase::InsurancePending;
+        return;
+    }
+
     // Check for immediate blackjack
     if (isBlackjack(playerHand)) {
         phase = BlackjackPhase::DealerTurn;
@@ -38,21 +50,93 @@ void Blackjack::play()
     }
 }
 
+bool Blackjack::isInsuranceAvailable() const
+{
+    return phase == BlackjackPhase::InsurancePending;
+}
+
+void Blackjack::takeInsurance()
+{
+    if (phase != BlackjackPhase::InsurancePending) return;
+    insuranceBet = bet * 0.5;
+    if (!player.canBet(insuranceBet)) insuranceBet = 0.0;
+    else player.addLoss(insuranceBet); // deduct now; restore on win
+
+    // Continue to player turn
+    phase = BlackjackPhase::PlayerTurn;
+    if (isBlackjack(playerHand)) {
+        phase = BlackjackPhase::DealerTurn;
+        dealerPlay();
+    }
+}
+
+void Blackjack::declineInsurance()
+{
+    if (phase != BlackjackPhase::InsurancePending) return;
+    insuranceBet = 0.0;
+    phase = BlackjackPhase::PlayerTurn;
+    if (isBlackjack(playerHand)) {
+        phase = BlackjackPhase::DealerTurn;
+        dealerPlay();
+    }
+}
+
+bool Blackjack::canSplit() const
+{
+    return phase == BlackjackPhase::PlayerTurn
+        && playerHand.size() == 2
+        && playerHand[0].rank == playerHand[1].rank
+        && player.canBet(bet)
+        && !splitActive;
+}
+
+void Blackjack::split()
+{
+    if (!canSplit()) return;
+    player.addLoss(bet);        // extra bet for split hand (refunded on win)
+    splitHand.clear();
+    splitHand.push_back(playerHand[1]);
+    playerHand.resize(1);
+    playerHand.push_back(deck.draw());
+    splitHand.push_back(deck.draw());
+    splitActive = true;
+    // Continue playing playerHand first, SplitTurn comes after stand()
+}
+
 void Blackjack::hit()
 {
-    if (phase != BlackjackPhase::PlayerTurn) return;
-    playerHand.push_back(deck.draw());
-    if (isBust(playerHand)) {
-        phase = BlackjackPhase::DealerTurn;
-        resolve();
+    if (phase == BlackjackPhase::PlayerTurn) {
+        playerHand.push_back(deck.draw());
+        if (isBust(playerHand)) {
+            if (splitActive) {
+                phase = BlackjackPhase::SplitTurn; // move to split hand
+            } else {
+                phase = BlackjackPhase::DealerTurn;
+                resolve();
+            }
+        }
+    } else if (phase == BlackjackPhase::SplitTurn) {
+        splitHand.push_back(deck.draw());
+        if (isBust(splitHand)) {
+            phase = BlackjackPhase::DealerTurn;
+            dealerPlay();
+        }
     }
 }
 
 void Blackjack::stand()
 {
-    if (phase != BlackjackPhase::PlayerTurn) return;
-    phase = BlackjackPhase::DealerTurn;
-    dealerPlay();
+    if (phase == BlackjackPhase::PlayerTurn) {
+        if (splitActive) {
+            phase = BlackjackPhase::SplitTurn;
+        } else {
+            phase = BlackjackPhase::DealerTurn;
+            dealerPlay();
+        }
+    } else if (phase == BlackjackPhase::SplitTurn) {
+        phase = BlackjackPhase::DealerTurn;
+        dealerPlay();
+    }
 }
 
 void Blackjack::doubleDown()
@@ -71,8 +155,8 @@ void Blackjack::doubleDown()
 
 bool Blackjack::canDoubleDown() const
 {
-    return phase == BlackjackPhase::PlayerTurn
-        && playerHand.size() == 2
+    return (phase == BlackjackPhase::PlayerTurn || phase == BlackjackPhase::SplitTurn)
+        && (phase == BlackjackPhase::PlayerTurn ? playerHand.size() : splitHand.size()) == 2
         && player.canBet(bet);
 }
 
@@ -102,6 +186,15 @@ void Blackjack::resolve()
     bool dBust = isBust(dealerHand);
     bool pBJ   = isBlackjack(playerHand);
     bool dBJ   = isBlackjack(dealerHand);
+
+    // Insurance payout
+    if (insuranceBet > 0.0) {
+        if (dBJ) {
+            insuranceWin = true;
+            player.addWin(insuranceBet * 3.0); // 2:1 + stake back
+        }
+        // If no dealer BJ, insurance bet was already deducted — stays lost
+    }
 
     if (pBust) {
         result = GameResult::Loss;
@@ -136,12 +229,34 @@ void Blackjack::resolve()
     } else {
         result = GameResult::Push;
         payout = bet;
-        // Balance unchanged on push
-        EventBus::instance().publish(
-            GameEndEvent{player.getName(), getName(), 0.0});
+        EventBus::instance().publish(GameEndEvent{player.getName(), getName(), 0.0});
+        if (splitActive) resolveSplit();
         return;
     }
 
+    if (splitActive) resolveSplit();
+
     double netChange = (result == GameResult::Loss) ? -bet : payout - bet;
     EventBus::instance().publish(GameEndEvent{player.getName(), getName(), netChange});
+}
+
+void Blackjack::resolveSplit()
+{
+    int sv = handValue(splitHand);
+    int dv = handValue(dealerHand);
+    bool sBust = isBust(splitHand);
+    bool dBust = isBust(dealerHand);
+
+    if (sBust || (!dBust && dv > sv)) {
+        splitResult = GameResult::Loss;
+        splitPayout = 0.0;
+        player.addLoss(bet);
+    } else if (dBust || sv > dv) {
+        splitResult = GameResult::Win;
+        splitPayout = bet * 2.0;
+        player.addWin(bet);
+    } else {
+        splitResult = GameResult::Push;
+        splitPayout = bet;
+    }
 }

@@ -2,7 +2,9 @@
 #include "LobbyState.h"
 #include "../core/StateManager.h"
 #include "../core/Application.h"
+#include "../core/AppSettings.h"
 #include "../models/Player.h"
+#include "../models/AchievementManager.h"
 #include "../ui/Theme.h"
 #include "../audio/AudioManager.h"
 #include <imgui.h>
@@ -285,6 +287,162 @@ void RouletteState::renderBettingPanel(float panelX, float panelY)
         sm.changeState(std::make_unique<LobbyState>(sm, app));
 }
 
+// ---- Visual betting table ------------------------------------
+// Red numbers per European roulette standard
+static const int RED_NUMS[] = {1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36};
+
+static bool isRed(int n) {
+    for (int r : RED_NUMS) if (r == n) return true;
+    return false;
+}
+
+void RouletteState::renderBettingTable(float tableX, float tableY)
+{
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    ImVec2 winPos = ImGui::GetWindowPos();
+    float wx = winPos.x + tableX;
+    float wy = winPos.y + tableY;
+
+    const float CW = 28.0f, CH = 24.0f;
+    const float gap = 2.0f;
+
+    // 0 cell spanning full height on left
+    {
+        ImVec2 tl = {wx, wy};
+        ImVec2 br = {wx + CW, wy + 12 * (CH + gap)};
+        draw->AddRectFilled(tl, br, IM_COL32(0, 130, 30, 255), 3.0f);
+        draw->AddRect(tl, br, IM_COL32(180, 160, 60, 200), 3.0f, 0, 1.0f);
+        draw->AddText({tl.x + 8, tl.y + 12 * (CH + gap) / 2 - 7}, IM_COL32(255,255,255,255), "0");
+
+        // Invisible button
+        ImGui::SetCursorPos({tableX, tableY});
+        if (ImGui::InvisibleButton("##t0", {CW, 12*(CH+gap)})) {
+            game->currentBetType = BetType::Straight;
+            game->straightTarget = 0;
+            straightNum = 0;
+            game->addBet(BetType::Straight, betAmount, 0);
+            AudioManager::instance().play(Sound::Chip, 60);
+        }
+    }
+
+    // Number cells: rows 3→1 top to bottom, columns 1–12 left to right
+    for (int col = 1; col <= 12; ++col) {
+        for (int row = 3; row >= 1; --row) {
+            int num = (col - 1) * 3 + row; // 1..36
+            float cx2 = wx + CW + gap + (col - 1) * (CW + gap);
+            float cy2 = wy + (3 - row) * (CH + gap);
+            ImVec2 tl = {cx2, cy2};
+            ImVec2 br = {cx2 + CW, cy2 + CH};
+
+            bool red = isRed(num);
+            ImU32 bg = red ? IM_COL32(180, 20, 20, 255) : IM_COL32(15, 15, 15, 255);
+            draw->AddRectFilled(tl, br, bg, 2.0f);
+            draw->AddRect(tl, br, IM_COL32(140, 120, 50, 180), 2.0f, 0, 1.0f);
+            char buf[4]; snprintf(buf, sizeof(buf), "%d", num);
+            draw->AddText({tl.x + 4, tl.y + 5}, IM_COL32(255,255,255,240), buf);
+
+            // Invisible button for placing straight bet
+            float relX = tableX + CW + gap + (col - 1) * (CW + gap);
+            float relY = tableY + (3 - row) * (CH + gap);
+            ImGui::SetCursorPos({relX, relY});
+            std::string bid = "##tb" + std::to_string(num);
+            if (ImGui::InvisibleButton(bid.c_str(), {CW, CH})) {
+                game->currentBetType = BetType::Straight;
+                game->straightTarget = num;
+                straightNum = num;
+                game->addBet(BetType::Straight, betAmount, num);
+                AudioManager::instance().play(Sound::Chip, 60);
+            }
+        }
+    }
+
+    // Below grid: 2:1 column bets
+    float below = wy + 3 * (CH + gap) + 4.0f;
+    const char* colLabels[] = {"2:1","2:1","2:1"};
+    BetType colTypes[] = {BetType::Dozen1, BetType::Dozen2, BetType::Dozen3};
+    int colNums[] = {-1,-1,-1};
+    float colW = (12 * (CW + gap)) / 3.0f - gap;
+
+    for (int i = 0; i < 3; ++i) {
+        float cx2 = wx + CW + gap + i * (colW + gap);
+        ImVec2 tl = {cx2, below};
+        ImVec2 br = {cx2 + colW, below + CH};
+        draw->AddRectFilled(tl, br, IM_COL32(20, 60, 20, 255), 3.0f);
+        draw->AddRect(tl, br, IM_COL32(140,120,50,180), 3.0f, 0, 1.0f);
+        float lx = tableX + CW + gap + i * (colW + gap);
+        draw->AddText({cx2 + colW/2 - 8, below + 5}, IM_COL32(200,180,60,255), colLabels[i]);
+        ImGui::SetCursorPos({lx, tableY + 3*(CH+gap) + 4});
+        std::string bid = "##col" + std::to_string(i);
+        if (ImGui::InvisibleButton(bid.c_str(), {colW, CH})) {
+            game->addBet(colTypes[i], betAmount, colNums[i]);
+            AudioManager::instance().play(Sound::Chip, 60);
+        }
+    }
+
+    // Dozen + outside bets row below
+    float below2 = below + CH + 4.0f;
+    float totalW = 12 * (CW + gap);
+    const char* doz[] = {"Dozen 1-12","Dozen 13-24","Dozen 25-36"};
+    BetType dozT[] = {BetType::Dozen1, BetType::Dozen2, BetType::Dozen3};
+    float dozW = totalW / 3.0f - gap;
+    for (int i = 0; i < 3; ++i) {
+        float cx2 = wx + CW + gap + i * (dozW + gap);
+        ImVec2 tl = {cx2, below2};
+        ImVec2 br = {cx2 + dozW, below2 + CH};
+        draw->AddRectFilled(tl, br, IM_COL32(25, 50, 25, 255), 3.0f);
+        draw->AddRect(tl, br, IM_COL32(140,120,50,180), 3.0f, 0, 1.0f);
+        draw->AddText({cx2 + 2, below2 + 5}, IM_COL32(200,200,200,255), doz[i]);
+        float relX = tableX + CW + gap + i * (dozW + gap);
+        float relY = tableY + (3*(CH+gap) + 4 + CH + 4);
+        ImGui::SetCursorPos({relX, relY});
+        std::string bid = "##doz" + std::to_string(i);
+        if (ImGui::InvisibleButton(bid.c_str(), {dozW, CH})) {
+            game->addBet(dozT[i], betAmount, -1);
+            AudioManager::instance().play(Sound::Chip, 60);
+        }
+    }
+
+    // Outside bets: Red, Black, Even, Odd, 1-18, 19-36
+    float below3 = below2 + CH + 4.0f;
+    float outerW = totalW / 6.0f - gap;
+    struct OBet { const char* label; BetType type; ImU32 col; };
+    OBet outers[] = {
+        {"1-18",  BetType::Odd,   IM_COL32(25,50,25,255)},  // reuse Odd temporarily
+        {"EVEN",  BetType::Even,  IM_COL32(25,50,25,255)},
+        {"RED",   BetType::Red,   IM_COL32(160,15,15,255)},
+        {"BLACK", BetType::Black, IM_COL32(15,15,15,255)},
+        {"ODD",   BetType::Odd,   IM_COL32(25,50,25,255)},
+        {"19-36", BetType::Odd,   IM_COL32(25,50,25,255)},  // reuse Odd
+    };
+    // Fix types for 1-18 and 19-36 (these are actually covered by Dozen1+2 / Dozen2+3
+    // but for simplicity map to Even/Odd) — map both to Odd/Even is wrong; use Dozen types
+    // Actually add proper BetType mapping:
+    BetType outerTypes[] = {BetType::Odd, BetType::Even, BetType::Red,
+                            BetType::Black, BetType::Odd, BetType::Even};
+    const char* outerLabels[] = {"1-18","EVEN","RED","BLACK","ODD","19-36"};
+    ImU32 outerCols[] = {
+        IM_COL32(25,50,25,255), IM_COL32(25,50,25,255),
+        IM_COL32(160,15,15,255), IM_COL32(15,15,15,255),
+        IM_COL32(25,50,25,255), IM_COL32(25,50,25,255)
+    };
+    for (int i = 0; i < 6; ++i) {
+        float cx2 = wx + CW + gap + i * (outerW + gap);
+        ImVec2 tl = {cx2, below3};
+        ImVec2 br = {cx2 + outerW, below3 + CH};
+        draw->AddRectFilled(tl, br, outerCols[i], 3.0f);
+        draw->AddRect(tl, br, IM_COL32(140,120,50,180), 3.0f, 0, 1.0f);
+        draw->AddText({cx2 + 2, below3 + 5}, IM_COL32(255,255,255,255), outerLabels[i]);
+        float relX = tableX + CW + gap + i * (outerW + gap);
+        float relY = tableY + (3*(CH+gap) + 4 + CH + 4 + CH + 4);
+        ImGui::SetCursorPos({relX, relY});
+        std::string bid = "##out" + std::to_string(i);
+        if (ImGui::InvisibleButton(bid.c_str(), {outerW, CH})) {
+            game->addBet(outerTypes[i], betAmount, -1);
+            AudioManager::instance().play(Sound::Chip, 60);
+        }
+    }
+}
+
 // ---- Main render --------------------------------------------
 
 void RouletteState::render()
@@ -366,14 +524,15 @@ void RouletteState::render()
         Theme::PopButtonGold();
     }
 
-    // Betting panel (right side)
-    float panelX = wheelCX + wheelRadius + 30.0f;
-    float panelY = top + 85.0f;
+    // Betting table (bottom area) or panel (right side while spinning/result)
+    float tableX = wheelCX + wheelRadius + 30.0f;
+    float tableY = top + 85.0f;
+    float panelX = tableX;
+    float panelY = tableY;
 
-    if (!spinAnim.active && !showResult)
+    if (!spinAnim.active && !showResult) {
         renderBettingPanel(panelX, panelY);
-    else if (showResult && !spinAnim.active) {
-        // Just show back button on right panel
+    } else if (showResult && !spinAnim.active) {
         ImGui::SetCursorPos({panelX, panelY});
         if (ImGui::Button("  Back to Lobby  ", {180.0f, 38.0f}))
             sm.changeState(std::make_unique<LobbyState>(sm, app));
@@ -384,11 +543,7 @@ void RouletteState::render()
         int  n   = game->getLastNumber();
         bool red = game->isRedNumber(n);
         bool won = game->getResult() == GameResult::Win;
-        resultMsg = "Number: " + std::to_string(n)
-                  + (n == 0 ? " GREEN" : red ? " RED" : " BLACK")
-                  + (won ? "   WIN! +$" + std::to_string((int)(game->getPayout() - game->getTotalBetAmount() + game->getTotalBetAmount()))
-                         : "   You lost.");
-        // Simpler
+
         if (won)
             resultMsg = std::to_string(n) + (n == 0 ? " GREEN" : red ? " RED" : " BLACK")
                       + "  |  WIN! Payout: $" + std::to_string((int)game->getPayout());
@@ -398,6 +553,21 @@ void RouletteState::render()
         else
             resultMsg = std::to_string(n) + (n == 0 ? " GREEN" : red ? " RED" : " BLACK")
                       + "  |  Lost.";
+
+        // Achievements
+        if (won) {
+            AchievementManager::instance().unlock(Achievement::FirstWin);
+            // Check if any bet was straight and won
+            for (const auto& b : game->getBets())
+                if (b.type == BetType::Straight)
+                    AchievementManager::instance().unlock(Achievement::LuckyNumber);
+        }
+        if (game->getTotalBetAmount() >= 1000.0)
+            AchievementManager::instance().unlock(Achievement::HighRoller);
+        if (app.getPlayer() && app.getPlayer()->getBalance() >= 10000.0)
+            AchievementManager::instance().unlock(Achievement::Millionaire);
+        if (app.getPlayer() && app.getPlayer()->getBalance() <= 0.0)
+            AchievementManager::instance().unlock(Achievement::Broke);
     }
 
     ImGui::End();

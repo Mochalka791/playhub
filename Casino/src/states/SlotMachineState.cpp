@@ -2,7 +2,9 @@
 #include "LobbyState.h"
 #include "../core/StateManager.h"
 #include "../core/Application.h"
+#include "../core/AppSettings.h"
 #include "../models/Player.h"
+#include "../models/AchievementManager.h"
 #include "../ui/Theme.h"
 #include "../audio/AudioManager.h"
 #include <imgui.h>
@@ -58,23 +60,41 @@ void SlotMachineState::update(float dt)
 
             double payout  = game->getPayout();
             GameResult res = game->getResult();
+            int fsFree     = game->getFreeSpinsRemaining();
+
             if (res == GameResult::Win) {
-                resultMsg = "YOU WIN!  Payout: $" + std::to_string((int)payout);
                 bool isBig = (game->getReels()[0] == SlotSymbol::Crown);
+                if (game->isFreeSpin())
+                    resultMsg = "FREE SPIN WIN!  +$" + std::to_string((int)payout);
+                else
+                    resultMsg = "YOU WIN!  Payout: $" + std::to_string((int)payout);
                 AudioManager::instance().play(
                     isBig ? Sound::BigWinFanfare : Sound::WinFanfare, 115);
-                // Particles burst from reel area
                 particles.emit(512.f, 200.f, isBig ? 80 : 40,
                                isBig ? ParticleType::Confetti : ParticleType::Coin);
                 if (isBig)
                     particles.emit(512.f, 200.f, 40, ParticleType::Star);
                 winFlashTimer = 0.4f;
+                // Achievements
+                AchievementManager::instance().unlock(Achievement::FirstWin);
+                if (isBig)
+                    AchievementManager::instance().unlock(Achievement::SlotJackpot);
             } else if (res == GameResult::Push) {
                 resultMsg = "Two matching! Bet returned.";
                 AudioManager::instance().play(Sound::CoinDrop, 80);
             } else {
                 resultMsg = "No match. Better luck next time!";
                 AudioManager::instance().play(Sound::Lose, 90);
+            }
+
+            if (fsFree > 0)
+                resultMsg += "  [ +" + std::to_string(fsFree) + " FREE SPINS! ]";
+
+            if (app.getPlayer()) {
+                if (app.getPlayer()->getBalance() >= 10000.0)
+                    AchievementManager::instance().unlock(Achievement::Millionaire);
+                if (app.getPlayer()->getBalance() <= 0.0)
+                    AchievementManager::instance().unlock(Achievement::Broke);
             }
         }
     }
@@ -175,28 +195,57 @@ void SlotMachineState::render()
     ImGui::EndChild();
     ImGui::PopStyleColor();
 
-    // Bet amount
-    ImGui::SetCursorPos({cx - 200.0f, top + 190.0f});
-    ImGui::Text("Bet Amount:");
-    ImGui::SetCursorPos({cx - 200.0f, top + 215.0f});
-    ImGui::SetNextItemWidth(300.0f);
-    float maxBet = app.getPlayer() ? (float)app.getPlayer()->getBalance() : 100.0f;
-    ImGui::SliderFloat("##bet", &betAmount, 1.0f, std::max(1.0f, maxBet), "%.0f $");
+    auto& sett = AppSettings::instance();
+    int fsFree = game->getFreeSpinsRemaining();
+
+    // Free spin indicator
+    if (fsFree > 0) {
+        ImGui::SetCursorPos({cx - 200.0f, top + 185.0f});
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Gold());
+        ImGui::SetWindowFontScale(1.2f);
+        ImGui::Text("FREE SPINS REMAINING: %d", fsFree);
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopStyleColor();
+    }
+
+    // Bet amount (hidden during free spins)
+    if (fsFree == 0) {
+        ImGui::SetCursorPos({cx - 200.0f, top + 190.0f});
+        ImGui::Text("Bet Amount:");
+        ImGui::SetCursorPos({cx - 200.0f, top + 215.0f});
+        ImGui::SetNextItemWidth(300.0f);
+        float maxBet = app.getPlayer()
+            ? std::min((float)app.getPlayer()->getBalance(), sett.maxBet)
+            : sett.maxBet;
+        ImGui::SliderFloat("##bet", &betAmount, sett.minBet, std::max(sett.minBet, maxBet), "%.0f $");
+    }
 
     // Spin button
+    bool isFreeSpinAvail = (fsFree > 0) && !reelAnim.active && !showResult;
     bool canSpin = !reelAnim.active && !showResult
-                && app.getPlayer() && app.getPlayer()->canBet(betAmount);
+                && app.getPlayer()
+                && (isFreeSpinAvail || app.getPlayer()->canBet(betAmount));
+
+    if (betAmount >= 1000.0f)
+        AchievementManager::instance().unlock(Achievement::HighRoller);
 
     ImGui::SetCursorPos({cx - 80.0f, top + 265.0f});
     Theme::PushButtonGold();
     if (!canSpin) ImGui::BeginDisabled();
-    if (ImGui::Button("   SPIN!   ", {160.0f, 50.0f})) {
-        game->placeBet(betAmount);
-        game->play();
+    const char* spinLabel = isFreeSpinAvail ? "  FREE SPIN!  " : "   SPIN!   ";
+    if (ImGui::Button(spinLabel, {160.0f, 50.0f})) {
+        if (isFreeSpinAvail) {
+            game->consumeFreeSpin();
+            game->play();
+        } else {
+            game->placeBet(betAmount);
+            game->play();
+        }
         reelAnim.start();
         showResult = false;
         resultMsg.clear();
         displayReels.fill(SlotSymbol::Seven);
+        reel1WasDone = reel2WasDone = reel3WasDone = false;
     }
     if (!canSpin) ImGui::EndDisabled();
     Theme::PopButtonGold();

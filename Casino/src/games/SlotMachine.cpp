@@ -13,9 +13,17 @@ void SlotMachine::placeBet(double amount)
     bet = amount;
 }
 
+void SlotMachine::consumeFreeSpin()
+{
+    if (freeSpinsRemaining > 0) {
+        --freeSpinsRemaining;
+        currentlyFreeSpin = true;
+    }
+}
+
 void SlotMachine::play()
 {
-    if (bet <= 0.0)
+    if (!currentlyFreeSpin && bet <= 0.0)
         throw std::runtime_error("Place a bet first");
 
     std::random_device rd;
@@ -25,7 +33,25 @@ void SlotMachine::play()
     for (auto& r : reels)
         r = static_cast<SlotSymbol>(dist(rng));
 
+    // For free spins, bet is still used for payout calculation but not deducted
+    if (currentlyFreeSpin) {
+        currentlyFreeSpin = false;
+        calculateResult();
+        if (result == GameResult::Win) {
+            player.addWin(payout); // full payout, no deduction
+            EventBus::instance().publish(WinEvent{player.getName(), payout, getName()});
+        }
+        // Check for more free spins (3x Clover again)
+        if (reels[0] == SlotSymbol::Clover && reels[1] == SlotSymbol::Clover && reels[2] == SlotSymbol::Clover)
+            freeSpinsRemaining += 5;
+        return;
+    }
+
     calculateResult();
+
+    // Award free spins on 3x Clover
+    if (reels[0] == SlotSymbol::Clover && reels[1] == SlotSymbol::Clover && reels[2] == SlotSymbol::Clover)
+        freeSpinsRemaining += 5;
 
     if (result == GameResult::Win) {
         player.addWin(payout - bet);

@@ -109,11 +109,13 @@
     <ClCompile Include="src\core\StateManager.cpp" />
     <ClCompile Include="src\core\EventSystem.cpp" />
     <ClCompile Include="src\core\GameFactory.cpp" />
+    <ClCompile Include="src\core\AppSettings.cpp" />
     <!-- Models -->
     <ClCompile Include="src\models\Card.cpp" />
     <ClCompile Include="src\models\Deck.cpp" />
     <ClCompile Include="src\models\Player.cpp" />
     <ClCompile Include="src\models\HighscoreManager.cpp" />
+    <ClCompile Include="src\models\AchievementManager.cpp" />
     <!-- Games -->
     <ClCompile Include="src\games\SlotMachine.cpp" />
     <ClCompile Include="src\games\Blackjack.cpp" />
@@ -121,6 +123,7 @@
     <ClCompile Include="src\games\DealerStandSoft17.cpp" />
     <ClCompile Include="src\games\Roulette.cpp" />
     <ClCompile Include="src\games\RussianRoulette.cpp" />
+    <ClCompile Include="src\games\VideoPoker.cpp" />
     <!-- States -->
     <ClCompile Include="src\states\MenuState.cpp" />
     <ClCompile Include="src\states\LoginState.cpp" />
@@ -130,6 +133,8 @@
     <ClCompile Include="src\states\RouletteState.cpp" />
     <ClCompile Include="src\states\HighscoreState.cpp" />
     <ClCompile Include="src\states\RussianRouletteState.cpp" />
+    <ClCompile Include="src\states\SettingsState.cpp" />
+    <ClCompile Include="src\states\VideoPokerState.cpp" />
     <!-- Audio -->
     <ClCompile Include="src\audio\AudioManager.cpp" />
     <!-- UI -->

@@ -26,6 +26,8 @@ private:
     ParticleSystem particles;
     bool resultResolved = false;
 
-    void renderHand(const Hand& hand, bool hideFirst, const char* label);
+    void renderHand(ImDrawList* draw, ImVec2 winPos, const Hand& hand,
+                    float startX, float y, bool hideFirst) const;
+    static void drawCard(ImDrawList* draw, ImVec2 tl, const Card& card, bool faceDown = false);
     void resolveAndShowResult();
 };

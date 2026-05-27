@@ -35,5 +35,6 @@ private:
 
     void renderWheel(float screenX, float screenY, float radius);
     void renderBettingPanel(float panelX, float panelY);
+    void renderBettingTable(float tableX, float tableY);
     int  findWheelIndex(int number) const;
 };

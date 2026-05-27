@@ -20,6 +20,8 @@ public:
     void submit(const Player& player);
     const std::vector<HighscoreEntry>& getEntries() const { return entries; }
     void clear();
+    void save();
+    void load();
 
     static constexpr int MAX_ENTRIES = 10;
 

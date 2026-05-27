@@ -27,6 +27,8 @@ public:
     Player*      getPlayer() const { return player.get(); }
     void         setPlayer(std::unique_ptr<Player> p);
 
+    void         setFullscreen(bool on);
+
 private:
     SDL_Window*   window    = nullptr;
     SDL_GLContext glContext  = nullptr;

@@ -3,6 +3,7 @@
 #include "../core/StateManager.h"
 #include "../core/Application.h"
 #include "../models/Player.h"
+#include "../models/AchievementManager.h"
 #include "../ui/Theme.h"
 #include "../audio/AudioManager.h"
 #include <imgui.h>
@@ -57,12 +58,21 @@ void RussianRouletteState::update(float dt)
             AudioManager::instance().play(Sound::GunBang, 128);
             particles.emit(cx - 100.0f, cy - 60.0f, 30, ParticleType::Flash);
             particles.emit(cx - 100.0f, cy - 60.0f, 20, ParticleType::Smoke);
+            if (app.getPlayer() && app.getPlayer()->getBalance() <= 0.0)
+                AchievementManager::instance().unlock(Achievement::Broke);
         } else {
             AudioManager::instance().play(Sound::GunClickEmpty, 100);
             AudioManager::instance().play(Sound::WinFanfare, 100);
             particles.emit(cx, cy, 50, ParticleType::Coin);
             particles.emit(cx, cy, 20, ParticleType::Star);
+            AchievementManager::instance().unlock(Achievement::Survivor);
+            if (game->getBullets() >= 5)
+                AchievementManager::instance().unlock(Achievement::Daredevil);
+            if (app.getPlayer() && app.getPlayer()->getBalance() >= 10000.0)
+                AchievementManager::instance().unlock(Achievement::Millionaire);
         }
+        if (game->getBet() >= 1000.0)
+            AchievementManager::instance().unlock(Achievement::HighRoller);
     }
 
     if (shakeTimer > 0.0f)

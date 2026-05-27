@@ -1,7 +1,9 @@
 #include "Application.h"
 #include "StateManager.h"
+#include "AppSettings.h"
 #include "../states/MenuState.h"
 #include "../models/Player.h"
+#include "../models/AchievementManager.h"
 #include "../ui/Theme.h"
 #include "../audio/AudioManager.h"
 
@@ -107,7 +109,14 @@ void Application::processEvents()
             && e.window.event == SDL_WINDOWEVENT_CLOSE
             && e.window.windowID == SDL_GetWindowID(window))
             running = false;
+        if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F11)
+            setFullscreen(!(SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN_DESKTOP));
     }
+}
+
+void Application::setFullscreen(bool on)
+{
+    SDL_SetWindowFullscreen(window, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
 }
 
 void Application::newFrame()
